@@ -54,6 +54,8 @@ try
         logger.Fatal("Failed to get secrets from AWS. Error: " + ex.InnerException);
     }
 
+    builder.Services.AddTransient<IEmailSender, EmailSender>();
+
     // Add services to the container.
     builder.Services.AddRazorPages(options =>
     {
@@ -103,6 +105,7 @@ try
 
     // Add CAS settings from appSettings configuration
     builder.Services.Configure<CasSettings>(builder.Configuration.GetSection("Cas"));
+    builder.Services.Configure<SMTPSettings>(builder.Configuration.GetSection("Config:AmazonSES"));
 
     // Define authorization policies
     builder.Services.AddAuthorization(options =>
@@ -239,9 +242,9 @@ try
 
     app.Run();
 
-    RecurringJob.AddOrUpdate("check-for-emails", // Unique Job ID
-        () => EmailSender.EmailSendkJob(), // The method to execute
-        Cron.MinuteInterval(10)
+    RecurringJob.AddOrUpdate<EmailSender>("check-for-emails", // Unique Job ID
+        x => x.EmailSendJob(), // The method to execute
+        Cron.MinuteInterval(1)
     );
 }
 

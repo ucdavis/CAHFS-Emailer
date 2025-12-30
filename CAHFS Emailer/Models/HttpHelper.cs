@@ -60,6 +60,9 @@ namespace CAHFS_Emailer.Models
         /// <returns></returns>
         public static T? GetSetting<T>(string section, string setting)
         {
+            var sect = Settings.GetSection(section);
+            var settingValue = sect.GetValue<T>(setting);
+
             return Settings == null
                 ? default
                 : Settings.GetSection(section).GetValue<T>(setting);

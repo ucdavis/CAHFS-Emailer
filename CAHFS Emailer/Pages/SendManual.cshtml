@@ -1,0 +1,46 @@
+﻿@page
+@model CAHFS_Emailer.Pages.SendManualModel
+@{
+    ViewData["Title"] = "Send Manual Email";
+    
+}
+
+<div class="container mt-5">
+    <h2>Send Email</h2>
+
+    @if (!string.IsNullOrEmpty(Model.Message))
+    {
+        <div class="alert @(Model.Message.Contains("successfully") ? "alert-success" : "alert-danger")">
+            @Model.Message
+        </div>
+    }
+
+    <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label asp-for="To" class="form-label">To:</label>
+            <input asp-for="To" class="form-control" type="email" required />
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="From" class="form-label">From:</label>
+            <input asp-for="From" class="form-control" type="email" required />
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Subject" class="form-label">Subject:</label>
+            <input asp-for="Subject" class="form-control" type="text" required />
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Body" class="form-label">Body:</label>
+            <textarea asp-for="Body" class="form-control" rows="5" required></textarea>
+        </div>
+
+        <div class="mb-3">
+            <label asp-for="Attachment" class="form-label">Attachment:</label>
+            <input asp-for="Attachment" class="form-control" type="file" />
+        </div>
+
+        <button type="submit" class="btn btn-primary">Send Email</button>
+    </form>
+</div>

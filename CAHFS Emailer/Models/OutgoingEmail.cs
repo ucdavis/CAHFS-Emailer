@@ -22,6 +22,7 @@
         // Attachments
         public string? AttachmentList { get; set; }
         public int? AttachmentCount { get; set; }
+        public byte[]? AttachmentData { get; set; }
 
         // Headers / options
         public string? Importance { get; set; }

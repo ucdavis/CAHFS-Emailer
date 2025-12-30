@@ -5,7 +5,7 @@ namespace CAHFS_Emailer.Data
 {
     public class StarLIMSContext : DbContext
     {
-        public virtual DbSet<OutgoingEmail> OrdTasks{ get; set; }
+        public virtual DbSet<OutgoingEmail> OutgoingEmails{ get; set; }
 
         public StarLIMSContext()
         {
