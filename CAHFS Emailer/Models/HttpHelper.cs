@@ -84,11 +84,11 @@ namespace CAHFS_Emailer.Models
 
                 if(Environment != null && Environment.IsEnvironment("Test"))
                 {
-                    rootURL += "/caei-test";
+                    rootURL += "/emailer-test";
                 }
                 else if (Environment != null && Environment.IsEnvironment("Production"))
                 {
-                    rootURL += "/caei";
+                    rootURL += "/emailer";
                 }
             }
 
