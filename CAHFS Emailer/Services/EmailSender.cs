@@ -5,6 +5,7 @@ using CAHFS_Emailer.Models;
 using Hangfire.Storage.Monitoring;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using MimeKit.Text;
@@ -24,8 +25,12 @@ namespace CAHFS_Emailer.Services
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private readonly StarLIMSContext _context = context;
         private readonly SMTPSettings _smtpSettings = smtpSettings.Value; // HttpHelper.GetSetting<SMTPSettings>("Config", "AmazonSES")
-                 // ?? throw new InvalidOperationException("Amazon SES settings are not configured properly.");
+                                                                          // ?? throw new InvalidOperationException("Amazon SES settings are not configured properly.");
 
+        /// <summary>
+        /// Entry point for the job to send emails
+        /// </summary>
+        /// <returns></returns>
         public async Task EmailSendJob()
         {
             _logger.Info($"EmailSendJob started at: {DateTime.UtcNow:HH:mm:ss}");
@@ -37,10 +42,16 @@ namespace CAHFS_Emailer.Services
             }
             else
             {
-                _logger.Warn($"Exiting EmailSendkJob - Status is {_emailerStatus}");
+                _logger.Warn($"Exiting EmailSendJob - Status is {_emailerStatus}");
             }
+
+            _logger.Info($"EmailSendJob finished at: {DateTime.UtcNow:HH:mm:ss}");
         }
 
+        /// <summary>
+        /// Function to send all emails in the queue. Should be locked by a semaphore to prevent duplicate emails being sent.
+        /// </summary>
+        /// <returns></returns>
         private async Task SendEmailsAsync()
         {
             //get emails from the database
@@ -62,7 +73,26 @@ namespace CAHFS_Emailer.Services
 
                 try
                 {
-                    var message = CreateMessage(email);
+                    byte[]? attachment = null;
+                    if (email.AttachmentList != null)
+                    {
+                        attachment = await GetAttachment(email.AttachmentList);
+                    }
+
+                    var message = CreateMessage(email, attachment);
+
+                    //check for invalid recipients in non-production environments
+                    CheckEmailRecipients(message);
+                    if (message.To.Count == 0)
+                    {
+                        _logger.Warn($"No valid recipients for email for case {email.FolderNo}.");
+                        email.Status = "Error";
+                        email.ErrorMessage = "No valid recipients in non-production environment.";
+                        _context.OutgoingEmails.Update(email);
+                        await _context.SaveChangesAsync();
+                        continue;
+                    }
+
                     var result = await client.SendAsync(message);
                     if (IsSuccessResult(result))
                     {
@@ -89,9 +119,78 @@ namespace CAHFS_Emailer.Services
             await client.DisconnectAsync(true);
         }
 
+        /// <summary>
+        /// Get the attachment data from the database. Currently supports a single attachment. May need to support multiple attachments.
+        /// </summary>
+        /// <param name="attachmentList">Attachment List should be the StarDocID, or multiple StarDocIDs</param>
+        /// <returns></returns>
+        /// <exception cref="NotImplementedException"></exception>
+        private async Task<byte[]?> GetAttachment(string? attachmentList)
+        {
+            var starDocIds = attachmentList?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (starDocIds != null && starDocIds.Length >= 1)
+            {
+                if (starDocIds.Length > 1)
+                {
+                    _logger.Error($"Multiple attachments specified, but only the first will be processed: {attachmentList}");
+                }
+                var starDocId = starDocIds.First();
+                var dbFile = await _context.DBFileStorages.FirstOrDefaultAsync(f => f.FileImageId == starDocId);
+                return dbFile?.FileImage;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// On development and test servers, ensure emails are only sent to permitted recipients.
+        /// </summary>
+        /// <param name="message"></param>
+        /// <exception cref="NotImplementedException"></exception>
+        private void CheckEmailRecipients(MimeMessage message)
+        {
+            if (HttpHelper.Environment != null && !HttpHelper.Environment.IsProduction())
+            {
+                _logger.Info("Non-production environment - Checking allowed email recipients.");
+                var allowedEmails = HttpHelper.GetSection<string[]>("Email:AllowedRecipients")?.ToList();
+                var oldAddresses = new List<MailboxAddress>(message.To.Mailboxes);
+                message.To.Clear();
+                if (allowedEmails != null && allowedEmails.Count > 0)
+                {
+                    foreach (var address in oldAddresses)
+                    {
+                        if (allowedEmails.Contains(address.Address))
+                        {
+                            message.To.Add(address);
+                        }
+                        else
+                        {
+                            _logger.Warn($"Blocking email to {address.Address} on non-production server.");
+                        }
+                    }
+                }
+                else
+                {
+                    _logger.Warn($"Blocking email to all addresses on non-production server - no allowed emails defined.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Method to send a single email for validation purposes specified by a MimeMessage object (as opposed to an OutgoingEmail database entry).
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
         public async Task<bool> SendEmail(MimeMessage message)
         {
             _logger.Info($"Sending manual email.");
+
+            CheckEmailRecipients(message);
+            if (message.To.Count == 0)
+            {
+                _logger.Warn($"No valid recipients for manual email.");
+                return false;
+            }
 
             //connect to SES
             using var client = new SmtpClient();
@@ -120,12 +219,22 @@ namespace CAHFS_Emailer.Services
             return false;
         }
 
+        /// <summary>
+        /// Return true if it looks like the email was sent successfully
+        /// </summary>
+        /// <param name="result"></param>
+        /// <returns></returns>
         private static bool IsSuccessResult(string result)
         {
             return result.StartsWith("Ok");
         }
 
-        private static MimeMessage CreateMessage(OutgoingEmail email)
+        /// <summary>
+        /// Create a MimeMessage from an OutgoingEmail object
+        /// </summary>
+        /// <param name="email"></param>
+        /// <returns></returns>
+        private MimeMessage CreateMessage(OutgoingEmail email, byte[]? attachmentData = null)
         {
             //create message with from, to, subject
             var message = new MimeMessage();
@@ -148,19 +257,30 @@ namespace CAHFS_Emailer.Services
             //builder.Attachments.Add(fileName, attachmentData, ContentType.Parse("application/pdf"));
 
             //add attachments
-            if (email.AttachmentCount > 0 && email.AttachmentData != null)
+            if (email.AttachmentCount > 0 && attachmentData != null)
             {
-                using (var stream = new MemoryStream(email.AttachmentData))
+                using (var stream = new MemoryStream(attachmentData))
                 {
                     bodyBuilder.Attachments.Add("FileName", stream);
                 }
             }
+
+            _logger.Debug($"Email for case {email.FolderNo}: To: {message.To.Count} addresses with {bodyBuilder.Attachments.Count} attachments.");
 
             message.Body = bodyBuilder.ToMessageBody();
 
             return message;
         }
 
+        /// <summary>
+        /// Create the MimeMessage from parameters for manual email sending
+        /// </summary>
+        /// <param name="from"></param>
+        /// <param name="to"></param>
+        /// <param name="subject"></param>
+        /// <param name="body"></param>
+        /// <param name="attachment"></param>
+        /// <returns></returns>
         public MimeMessage CreateMessage(string from, string to, string subject, string body, IFormFile? attachment)
         {
             //create message with from, to, subject
@@ -172,8 +292,6 @@ namespace CAHFS_Emailer.Services
 
             var bodyBuilder = new BodyBuilder();
             bodyBuilder.HtmlBody = body;
-
-            //builder.Attachments.Add(fileName, attachmentData, ContentType.Parse("application/pdf"));
 
             //add attachment
             if (attachment != null)
