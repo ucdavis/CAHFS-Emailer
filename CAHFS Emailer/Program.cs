@@ -55,6 +55,7 @@ try
     }
 
     builder.Services.AddScoped<IEmailSender, EmailSender>();
+    builder.Services.AddScoped<EmailService>();
 
     // Add services to the container.
     builder.Services.AddRazorPages(options =>

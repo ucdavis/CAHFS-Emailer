@@ -1,4 +1,87 @@
 ﻿@page
-@model CAHFS_Emailer.Pages.Emails
+@using CAHFS_Emailer.Models
+@model CAHFS_Emailer.Pages.EmailsModel
 @{
+    var emails = ViewData["Emails"] as List<EmailWithAttachments>;
 }
+
+<form method="get">
+    <div class="row">
+
+        <div class="mb-3 col">
+            <label asp-for="StartDate" class="form-label">Start Date:</label>
+            <input asp-for="StartDate" class="form-control" type="date" required />
+        </div>
+
+        <div class="mb-3 col">
+            <label asp-for="EndDate" class="form-label">Start Date:</label>
+            <input asp-for="EndDate" class="form-control" type="date" required />
+        </div>
+
+        <div class="mb-3 col">
+            <label asp-for="Status" class="form-label">Status:</label>
+            <select asp-for="Status" class="form-control">
+                <option value="">All</option>
+                <option value="SENT">Sent</option>
+                <option value="PENDING">Pending</option>
+                <option value="INPROCESS">In Process</option>
+                <option value="ERROR">Error</option>
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Search</button>
+    
+    </div>
+</form>
+
+<table cellpadding="3">
+    <thead>
+        <tr>
+            <th>FOLDERNO</th>
+            <th>Added</th>
+            <th>From</th>
+            <th>To</th>
+            <th>CC</th>
+            <th>BCC</th>
+            <th>Subject</th>
+            <th>Body</th>
+            <th>Status</th>
+            <th>Sent At</th>
+            <th>Attachments</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var e in emails ?? [])
+        {
+            <tr>
+                <td>@e.Email.FolderNo</td>
+                <td>@e.Email.InsertedAt</td>
+                <td>@e.Email.FromAddress</td>
+                <td>@e.Email.ToAddresses</td>
+                <td>@e.Email.CcAddresses</td>
+                <td>@e.Email.BccAddresses</td>
+                <td>@e.Email.SubjectLine</td>
+                <td>@e.Email.BodyText</td>
+                <td>
+                    @e.Email.Status
+                    <br/>
+                    @e.Email.ErrorMessage
+                </td>
+                <td>@e.Email.SentAt</td>
+                <td>
+                    @e.Email.AttachmentCount
+                    @if (e.Email.AttachmentCount > 0 && !string.IsNullOrEmpty(e.Email.AttachmentList))
+                    {
+                        <a href="ViewAttachment?id=@e.Email.AttachmentList">View</a>
+                    }
+                </td>
+            </tr>
+        }
+        @if (emails == null || emails.Count == 0)
+        {
+            <tr>
+                <td colspan="11">No emails found for the specified criteria.</td>
+            </tr>
+        }
+    </tbody>
+</table>
