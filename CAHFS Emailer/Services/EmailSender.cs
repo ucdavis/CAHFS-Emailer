@@ -40,7 +40,14 @@ namespace CAHFS_Emailer.Services
             if (_semaphore.Wait(0))
             {
                 _emailerStatus = EmailerStatus.Checking;
-                await SendEmailsAsync();
+                try
+                {
+                    await SendEmailsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, $"Error in EmailSendJob. {ex.ToString()}");
+                }
                 _emailerStatus = EmailerStatus.Available;
                 _semaphore.Release();
             }
@@ -88,8 +95,16 @@ namespace CAHFS_Emailer.Services
 
             //connect to SES
             using var client = new SmtpClient();
-            await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password);
+            try
+            {
+                await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error connecting to SMTP server. {ex.Message} Server is {_smtpSettings.Server}:{_smtpSettings.Port}");
+                return;
+            }
 
             _logger.Info($"Connected to SMTP server.");
             _emailerStatus = EmailerStatus.Sending;
