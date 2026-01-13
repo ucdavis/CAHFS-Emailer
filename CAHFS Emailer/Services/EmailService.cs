@@ -73,12 +73,28 @@ namespace CAHFS_Emailer.Services
         /// </summary>
         /// <param name="email"></param>
         /// <returns></returns>
-        public MimeMessage CreateMessage(OutgoingEmail email, byte[]? attachmentData = null)
+        public MimeMessage CreateMessage(OutgoingEmail email, DBFileStorage? attachment = null)
         {
             //create message with from, to, subject
             var message = new MimeMessage();
+
+            //add email addresses
             message.From.Add(new MailboxAddress("", email.FromAddress));
-            message.To.Add(new MailboxAddress("", email.ToAddresses));
+            message.ReplyTo.Add(new MailboxAddress("", email.ReplyToAddress ?? email.FromAddress));
+
+            foreach (var addr in email.ToAddresses?.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+            {
+                message.To.Add(new MailboxAddress("", addr));
+            }
+            foreach (var addr in email.CcAddresses?.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+            {
+                message.Cc.Add(new MailboxAddress("", addr));
+            }
+            foreach (var addr in email.BccAddresses?.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+            {
+                message.Bcc.Add(new MailboxAddress("", addr));
+            }
+
             message.Subject = email.SubjectLine;
 
             var bodyBuilder = new BodyBuilder();
@@ -93,14 +109,35 @@ namespace CAHFS_Emailer.Services
                 bodyBuilder.TextBody = email.BodyText;
             }
 
-            //builder.Attachments.Add(fileName, attachmentData, ContentType.Parse("application/pdf"));
-
             //add attachments
-            if (email.AttachmentCount > 0 && attachmentData != null)
+            if (attachment != null && attachment.FileImage != null)//email.AttachmentCount > 0 && 
             {
-                using (var stream = new MemoryStream(attachmentData))
+                using (var stream = new MemoryStream(attachment.FileImage))
                 {
-                    bodyBuilder.Attachments.Add("FileName", stream);
+                    switch(attachment.FileExtension?.ToLower())
+                    {
+                        case ".pdf":
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "pdf"));
+                            break;
+                        case ".doc":
+                        case ".docx":
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "msword"));
+                            break;
+                        case ".xls":
+                        case ".xlsx":
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "vnd.ms-excel"));
+                            break;
+                        case ".txt":
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("text", "plain"));
+                            break;
+                        case ".csv":
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("text", "csv"));
+                            break;
+                        default:
+                            _logger.Warn($"Unknown attachment file extension '{attachment.FileExtension}' for file '{attachment.FileName}'. Defaulting to application/pdf.");
+                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "pdf"));
+                            break;
+                    }
                 }
             }
 
@@ -137,7 +174,7 @@ namespace CAHFS_Emailer.Services
             {
                 using (var stream = attachment.OpenReadStream())
                 {
-                    bodyBuilder.Attachments.Add("Attachment.pdf", stream);
+                    bodyBuilder.Attachments.Add("Attachment.pdf", stream, new ContentType("application", "pdf"));
                 }
             }
 

@@ -116,7 +116,7 @@ namespace CAHFS_Emailer.Services
 
                 try
                 {
-                    var message = _emailService.CreateMessage(e, email.Attachments.FirstOrDefault()?.FileImage);
+                    var message = _emailService.CreateMessage(e, email.Attachments.FirstOrDefault());
 
                     //check for invalid recipients in non-production environments
                     _emailService.CheckEmailRecipients(message);
