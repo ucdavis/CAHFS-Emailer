@@ -70,28 +70,7 @@ namespace CAHFS_Emailer.Services
 
             _logger.Info($"Sending {emails.Count} emails.");
 
-            List<EmailWithAttachments> emailsWithAttachments = [];
-
-            //get attachments for each email, if they exist
-            foreach (var email in emails)
-            {
-                var emailWithAttachments = new EmailWithAttachments()
-                {
-                    Email = email,
-                    Attachments = new List<DBFileStorage>()
-                };
-
-                if (email.AttachmentList != null)
-                {
-                    var attachment = await _emailService.GetAttachment(email.AttachmentList);
-                    if (attachment != null)
-                    {
-                        emailWithAttachments.Attachments.Add(attachment);
-                    }
-                }
-
-                emailsWithAttachments.Add(emailWithAttachments);
-            }
+            List<EmailWithAttachments> emailsWithAttachments = await GetEmailsWithAttachments(emails);            
 
             //connect to SES
             using var client = new SmtpClient();
@@ -158,8 +137,34 @@ namespace CAHFS_Emailer.Services
             await client.DisconnectAsync(true);
         }
 
-       
-        
+        private async Task<List<EmailWithAttachments>> GetEmailsWithAttachments(List<OutgoingEmail> emails)
+        {
+            var emailsWithAttachments = new List<EmailWithAttachments>();
+
+            //get attachments for each email, if they exist
+            foreach (var email in emails)
+            {
+                var emailWithAttachments = new EmailWithAttachments()
+                {
+                    Email = email,
+                    Attachments = new List<OutgoingEmailAttachment>()
+                };
+
+                if (email.AttachmentList != null)
+                {
+                    var attachment = await _emailService.GetAttachment(email.AttachmentList);
+                    if (attachment != null)
+                    {
+                        emailWithAttachments.Attachments.Add(attachment);
+                    }
+                }
+
+                emailsWithAttachments.Add(emailWithAttachments);
+            }
+
+            return emailsWithAttachments;
+        }
+
 
         /// <summary>
         /// Method to send a single email for validation purposes specified by a MimeMessage object (as opposed to an OutgoingEmail database entry).
@@ -213,7 +218,5 @@ namespace CAHFS_Emailer.Services
         {
             return result.StartsWith("Ok");
         }
-
-        
     }
 }

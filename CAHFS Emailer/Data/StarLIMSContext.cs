@@ -6,6 +6,7 @@ namespace CAHFS_Emailer.Data
     public class StarLIMSContext : DbContext
     {
         public virtual DbSet<OutgoingEmail> OutgoingEmails{ get; set; }
+        public virtual DbSet<OutgoingEmailAttachment> OutgoingEmailAttachments { get; set; }
         public DbSet<DBFileStorage> DBFileStorages { get; set; }
         public DbSet<FolderLatestCaseReport> FolderLatestCaseReports { get; set; }
 
@@ -37,6 +38,40 @@ namespace CAHFS_Emailer.Data
 
                 entity.Property(e => e.SentAt)
                     .HasColumnType("datetime2(0)");
+            });
+
+            modelBuilder.Entity<OutgoingEmailAttachment>(entity =>
+            {
+                entity.ToTable("C_OUTGOING_EMAIL_ATTACHMENTS", "dbo");
+
+                entity.HasKey(e => e.AttachmentId);
+
+                entity.Property(e => e.Origrec)
+                    .HasColumnName("ORIGREC")
+                    .IsRequired();
+
+                entity.Property(e => e.Origsts)
+                    .HasColumnName("ORIGSTS")
+                    .HasColumnType("nchar(1)")
+                    .HasMaxLength(1)
+                    .IsRequired();
+
+                entity.Property(e => e.Stardocid)
+                    .HasColumnName("STARDOCID")
+                    .HasColumnType("nvarchar(20)")
+                    .HasMaxLength(20)
+                    .IsRequired();
+
+                entity.Property(e => e.AttachmentFilename)
+                    .HasColumnName("ATTACHMENT_FILENAME")
+                    .HasColumnType("nvarchar(100)")
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(e => e.AttachmentId)
+                    .HasColumnName("ATTACHMENT_ID")
+                    .ValueGeneratedOnAdd()
+                    .UseIdentityColumn(1, 1);
             });
 
             // Configure DbFileStorage entity with composite key

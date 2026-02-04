@@ -17,18 +17,24 @@ namespace CAHFS_Emailer.Services
         /// <param name="attachmentList">Attachment List should be the StarDocID, or multiple StarDocIDs</param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public async Task<DBFileStorage?> GetAttachment(string? attachmentList)
+        public async Task<OutgoingEmailAttachment?> GetAttachment(string? attachmentList)
         {
             var starDocIds = attachmentList?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (starDocIds != null && starDocIds.Length >= 1)
             {
                 if (starDocIds.Length > 1)
                 {
-                    _logger.Error($"Multiple attachments specified, but only the first will be processed: {attachmentList}");
+                    _logger.Warn($"Multiple attachments specified, but only the first will be processed: {attachmentList}");
                 }
                 var starDocId = starDocIds.First();
-                var dbFile = await _context.DBFileStorages.FirstOrDefaultAsync(f => f.FileImageId == starDocId);
-                return dbFile;
+                var outgoingAttachment = await _context.OutgoingEmailAttachments.FirstOrDefaultAsync(a => a.Stardocid == starDocId);
+                if (outgoingAttachment != null)
+                {
+                    var dbFile = await _context.DBFileStorages.FirstOrDefaultAsync(f => f.FileImageId == outgoingAttachment.Stardocid);
+                    outgoingAttachment.FileStorage = dbFile;
+                }
+
+                return outgoingAttachment;
             }
 
             return null;
@@ -73,7 +79,7 @@ namespace CAHFS_Emailer.Services
         /// </summary>
         /// <param name="email"></param>
         /// <returns></returns>
-        public MimeMessage CreateMessage(OutgoingEmail email, DBFileStorage? attachment = null)
+        public MimeMessage CreateMessage(OutgoingEmail email, OutgoingEmailAttachment? attachment = null)
         {
             //create message with from, to, subject
             var message = new MimeMessage();
@@ -110,32 +116,32 @@ namespace CAHFS_Emailer.Services
             }
 
             //add attachments
-            if (attachment != null && attachment.FileImage != null)//email.AttachmentCount > 0 && 
+            if (attachment != null && attachment?.FileStorage?.FileImage != null)//email.AttachmentCount > 0 && 
             {
-                using (var stream = new MemoryStream(attachment.FileImage))
+                using (var stream = new MemoryStream(attachment.FileStorage.FileImage))
                 {
-                    switch(attachment.FileExtension?.ToLower())
+                    switch(attachment.FileStorage.FileExtension?.ToLower())
                     {
                         case ".pdf":
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "pdf"));
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "pdf"));
                             break;
                         case ".doc":
                         case ".docx":
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "msword"));
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "msword"));
                             break;
                         case ".xls":
                         case ".xlsx":
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "vnd.ms-excel"));
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "vnd.ms-excel"));
                             break;
                         case ".txt":
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("text", "plain"));
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("text", "plain"));
                             break;
                         case ".csv":
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("text", "csv"));
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("text", "csv"));
                             break;
                         default:
-                            _logger.Warn($"Unknown attachment file extension '{attachment.FileExtension}' for file '{attachment.FileName}'. Defaulting to application/pdf.");
-                            bodyBuilder.Attachments.Add(attachment.FileName, stream, new ContentType("application", "pdf"));
+                            _logger.Warn($"Unknown attachment file extension '{attachment.FileStorage.FileExtension}' for file '{attachment.AttachmentFilename}'. Defaulting to application/pdf.");
+                            bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "pdf"));
                             break;
                     }
                 }

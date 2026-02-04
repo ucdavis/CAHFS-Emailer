@@ -3,6 +3,6 @@
     public class EmailWithAttachments
     {
         public OutgoingEmail Email { get; set; } = null!;
-        public List<DBFileStorage> Attachments { get; set; } = [];
+        public List<OutgoingEmailAttachment> Attachments { get; set; } = [];
     }
 }

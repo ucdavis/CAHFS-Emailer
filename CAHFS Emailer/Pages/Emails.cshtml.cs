@@ -32,7 +32,7 @@ namespace CAHFS_Emailer.Pages
                 var emailWithAttachments = new EmailWithAttachments()
                 {
                     Email = email,
-                    Attachments = new List<DBFileStorage>()
+                    Attachments = new List<OutgoingEmailAttachment>()
                 };
 
                 if (email.AttachmentList != null)
