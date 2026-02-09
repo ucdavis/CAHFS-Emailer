@@ -35,9 +35,9 @@ namespace CAHFS_Emailer.Pages
                     Attachments = new List<OutgoingEmailAttachment>()
                 };
 
-                if (email.AttachmentList != null)
+                if (email.AttachmentId != null && email.AttachmentId > 0)
                 {
-                    var attachment = await _emailService.GetAttachment(email.AttachmentList);
+                    var attachment = await _emailService.GetAttachment((int)email.AttachmentId);
                     if (attachment != null)
                     {
                         emailWithAttachments.Attachments.Add(attachment);

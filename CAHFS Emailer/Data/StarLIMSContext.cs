@@ -38,6 +38,12 @@ namespace CAHFS_Emailer.Data
 
                 entity.Property(e => e.SentAt)
                     .HasColumnType("datetime2(0)");
+
+                entity.HasOne(e => e.Attachment)
+                    .WithOne(a => a.OutgoingEmail)
+                    .HasForeignKey<OutgoingEmail>(e => e.AttachmentId);
+
+                entity.ToTable(tb => tb.UseSqlOutputClause(false));
             });
 
             modelBuilder.Entity<OutgoingEmailAttachment>(entity =>
@@ -72,6 +78,8 @@ namespace CAHFS_Emailer.Data
                     .HasColumnName("ATTACHMENT_ID")
                     .ValueGeneratedOnAdd()
                     .UseIdentityColumn(1, 1);
+                
+                entity.Ignore(e => e.FileStorage);
             });
 
             // Configure DbFileStorage entity with composite key
@@ -87,6 +95,24 @@ namespace CAHFS_Emailer.Data
                 entity.Property(e => e.OrigSts)
                     .IsFixedLength()
                     .HasMaxLength(1);
+
+                entity.Property(e => e.FileImage)
+                       .HasColumnName("FILE_IMAGE")
+                       .IsRequired();
+
+                entity.Property(e => e.FileImageId)
+                    .HasColumnName("FILE_IMAGE_ID")
+                    .IsRequired();
+
+                entity.Property(e => e.FileName)
+                    .HasColumnName("FILE_NAME")
+                    .HasMaxLength(20);
+
+                entity.Property(e => e.StoredCompress)
+                    .HasColumnName("STORED_COMPRESS");
+
+                entity.Property(e => e.FileExtension)
+                    .HasColumnName("FILE_EXTENSION");
             });
 
             //latest report view

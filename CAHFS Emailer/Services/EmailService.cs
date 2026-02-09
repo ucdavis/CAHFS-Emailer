@@ -14,12 +14,22 @@ namespace CAHFS_Emailer.Services
         /// <summary>
         /// Get the attachment data from the database. Currently supports a single attachment. May need to support multiple attachments.
         /// </summary>
-        /// <param name="attachmentList">Attachment List should be the StarDocID, or multiple StarDocIDs</param>
+        /// <param name="attachmentId">Attachment List should be the StarDocID, or multiple StarDocIDs</param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public async Task<OutgoingEmailAttachment?> GetAttachment(string? attachmentList)
+        public async Task<OutgoingEmailAttachment?> GetAttachment(int attachmentId)
         {
-            var starDocIds = attachmentList?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var outgoingAttachment = await _context.OutgoingEmailAttachments.FirstOrDefaultAsync(a => a.AttachmentId == attachmentId);
+            if (outgoingAttachment != null)
+            {
+                var dbFile = await _context.DBFileStorages.FirstOrDefaultAsync(f => f.FileImageId == outgoingAttachment.Stardocid);
+                outgoingAttachment.FileStorage = dbFile;
+            }
+
+            return outgoingAttachment;
+
+            //var starDocIds = attachmentList?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            /*
             if (starDocIds != null && starDocIds.Length >= 1)
             {
                 if (starDocIds.Length > 1)
@@ -27,17 +37,11 @@ namespace CAHFS_Emailer.Services
                     _logger.Warn($"Multiple attachments specified, but only the first will be processed: {attachmentList}");
                 }
                 var starDocId = starDocIds.First();
-                var outgoingAttachment = await _context.OutgoingEmailAttachments.FirstOrDefaultAsync(a => a.Stardocid == starDocId);
-                if (outgoingAttachment != null)
-                {
-                    var dbFile = await _context.DBFileStorages.FirstOrDefaultAsync(f => f.FileImageId == outgoingAttachment.Stardocid);
-                    outgoingAttachment.FileStorage = dbFile;
-                }
-
-                return outgoingAttachment;
+                
             }
 
             return null;
+            */
         }
 
         /// <summary>
@@ -122,21 +126,21 @@ namespace CAHFS_Emailer.Services
                 {
                     switch(attachment.FileStorage.FileExtension?.ToLower())
                     {
-                        case ".pdf":
+                        case "pdf":
                             bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "pdf"));
                             break;
-                        case ".doc":
-                        case ".docx":
+                        case "doc":
+                        case "docx":
                             bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "msword"));
                             break;
-                        case ".xls":
-                        case ".xlsx":
+                        case "xls":
+                        case "xlsx":
                             bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("application", "vnd.ms-excel"));
                             break;
-                        case ".txt":
+                        case "txt":
                             bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("text", "plain"));
                             break;
-                        case ".csv":
+                        case "csv":
                             bodyBuilder.Attachments.Add(attachment.AttachmentFilename, stream, new ContentType("text", "csv"));
                             break;
                         default:

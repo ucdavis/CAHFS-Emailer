@@ -70,9 +70,9 @@
                 <td>@e.Email.SentAt</td>
                 <td>
                     @e.Email.AttachmentCount
-                    @if (e.Email.AttachmentCount > 0 && !string.IsNullOrEmpty(e.Email.AttachmentList))
+                    @if (e.Email.AttachmentCount > 0 && e.Email.AttachmentId != null && e.Email.AttachmentId > 0)
                     {
-                        <a href="ViewAttachment?id=@e.Email.AttachmentList">View</a>
+                        <a href="ViewAttachment?id=@e.Email.AttachmentId">View</a>
                     }
                 </td>
             </tr>

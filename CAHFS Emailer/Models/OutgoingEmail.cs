@@ -41,8 +41,8 @@ namespace CAHFS_Emailer.Models
         [Column("BODY_HTML")]
         public string? BodyHtml { get; set; }
 
-        [Column("ATTACHMENT_LIST")]
-        public string? AttachmentList { get; set; }
+        [Column("ATTACHMENT_ID")]
+        public int? AttachmentId { get; set; }
 
         [Column("ATTACHMENT_COUNT")]
         public int? AttachmentCount { get; set; }
@@ -75,5 +75,7 @@ namespace CAHFS_Emailer.Models
 
         [Column("SENT_AT")]
         public DateTime? SentAt { get; set; }
+
+        public OutgoingEmailAttachment? Attachment { get; set; }
     }
 }
