@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace CAHFS_Emailer.Pages
 {
-    public class SendManualModel(IEmailSender sender) : PageModel
+    public class SendManualModel(IEmailSender sender, EmailService emailService) : PageModel
     {
         [BindProperty]
         public string To { get; set; } = null!;
@@ -24,6 +24,7 @@ namespace CAHFS_Emailer.Pages
 
         public string? Message { get; set; }
 
+        private readonly EmailService _emailService = emailService;
         private readonly IEmailSender _emailSender = sender;
 
         public void OnGet()
@@ -39,7 +40,7 @@ namespace CAHFS_Emailer.Pages
 
             try
             {
-                var message = _emailSender.CreateMessage(From, To, Subject, Body, Attachment);
+                var message = _emailService.CreateMessage(From, To, Subject, Body, Attachment);
                 await _emailSender.SendEmail(message);
                 Message = "Email sent successfully!";
                 ModelState.Clear();

@@ -5,15 +5,17 @@ using CAHFS_Emailer.Models;
 using Hangfire.Storage.Monitoring;
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using MimeKit.Cryptography;
 using MimeKit.Text;
 using NLog;
 
 namespace CAHFS_Emailer.Services
 {
 
-    public class EmailSender(StarLIMSContext context, IOptions<SMTPSettings> smtpSettings) : IEmailSender
+    public class EmailSender(StarLIMSContext context, IOptions<SMTPSettings> smtpSettings, EmailService emailService) : IEmailSender
     {
         private const EmailerStatus available = EmailerStatus.Available;
 
@@ -24,8 +26,13 @@ namespace CAHFS_Emailer.Services
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private readonly StarLIMSContext _context = context;
         private readonly SMTPSettings _smtpSettings = smtpSettings.Value; // HttpHelper.GetSetting<SMTPSettings>("Config", "AmazonSES")
-                 // ?? throw new InvalidOperationException("Amazon SES settings are not configured properly.");
+                                                                          // ?? throw new InvalidOperationException("Amazon SES settings are not configured properly.");
+        private readonly EmailService _emailService = emailService;
 
+        /// <summary>
+        /// Entry point for the job to send emails
+        /// </summary>
+        /// <returns></returns>
         public async Task EmailSendJob()
         {
             _logger.Info($"EmailSendJob started at: {DateTime.UtcNow:HH:mm:ss}");
@@ -33,14 +40,29 @@ namespace CAHFS_Emailer.Services
             if (_semaphore.Wait(0))
             {
                 _emailerStatus = EmailerStatus.Checking;
-                await SendEmailsAsync();
+                try
+                {
+                    await SendEmailsAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, $"Error in EmailSendJob. {ex.ToString()}");
+                }
+                _emailerStatus = EmailerStatus.Available;
+                _semaphore.Release();
             }
             else
             {
-                _logger.Warn($"Exiting EmailSendkJob - Status is {_emailerStatus}");
+                _logger.Warn($"Exiting EmailSendJob - Status is {_emailerStatus}");
             }
+
+            _logger.Info($"EmailSendJob finished at: {DateTime.UtcNow:HH:mm:ss}");
         }
 
+        /// <summary>
+        /// Function to send all emails in the queue. Should be locked by a semaphore to prevent duplicate emails being sent.
+        /// </summary>
+        /// <returns></returns>
         private async Task SendEmailsAsync()
         {
             //get emails from the database
@@ -48,50 +70,117 @@ namespace CAHFS_Emailer.Services
 
             _logger.Info($"Sending {emails.Count} emails.");
 
+            List<EmailWithAttachments> emailsWithAttachments = await GetEmailsWithAttachments(emails);            
+
             //connect to SES
             using var client = new SmtpClient();
-            await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password);
+            try
+            {
+                await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error connecting to SMTP server. {ex.Message} Server is {_smtpSettings.Server}:{_smtpSettings.Port}");
+                return;
+            }
 
             _logger.Info($"Connected to SMTP server.");
+            _emailerStatus = EmailerStatus.Sending;
 
-            foreach (var email in emails)
+            foreach (var email in emailsWithAttachments)
             {
-                //send email logic here
-                _logger.Info($"Sending email for case {email.FolderNo} to: {email.ToAddresses}. Emails contains {email.AttachmentCount} attachments.");
+                var e = email.Email;
+                _logger.Info($"Sending email for case {e.FolderNo} to: {e.ToAddresses}. Emails contains {e.AttachmentCount} attachments.");
 
                 try
                 {
-                    var message = CreateMessage(email);
+                    var message = _emailService.CreateMessage(e, email.Attachments.FirstOrDefault());
+
+                    //check for invalid recipients in non-production environments
+                    _emailService.CheckEmailRecipients(message);
+                    if (message.To.Count == 0)
+                    {
+                        _logger.Warn($"No valid recipients for email for case {e.FolderNo}.");
+                        e.Status = "Error";
+                        e.ErrorMessage = "No valid recipients in non-production environment.";
+                        _context.OutgoingEmails.Update(e);
+                        await _context.SaveChangesAsync();
+                        continue;
+                    }
+
                     var result = await client.SendAsync(message);
                     if (IsSuccessResult(result))
                     {
-                        _logger.Info($"Email sent successfully for case {email.FolderNo}. Result: {result}");
-                        email.Status = "Sent";
+                        _logger.Info($"Email sent successfully for case {e.FolderNo}. Result: {result}");
+                        e.Status = "Sent";
                     }
                     else
                     {
-                        _logger.Error($"Email failed to send for case {email.FolderNo}. Result: {result}");
-                        email.Status = "Error";
-                        email.ErrorMessage = $"Failed to send email. Result: {result}";
+                        _logger.Error($"Email failed to send for case {e.FolderNo}. Result: {result}");
+                        e.Status = "Error";
+                        e.ErrorMessage = $"Failed to send email. Result: {result}";
                     }
-                    _context.OutgoingEmails.Update(email);
+                    _context.OutgoingEmails.Update(e);
                     await _context.SaveChangesAsync();
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, $"Error sending email message for case {email.FolderNo}. {ex.Message}");
+                    _logger.Error(ex, $"Error sending email message for case {e.FolderNo}. {ex.Message}");
                     continue;
                 }
             }
+
+            _emailerStatus = EmailerStatus.Finishing;
 
             // Disconnect from the server
             await client.DisconnectAsync(true);
         }
 
+        private async Task<List<EmailWithAttachments>> GetEmailsWithAttachments(List<OutgoingEmail> emails)
+        {
+            var emailsWithAttachments = new List<EmailWithAttachments>();
+
+            //get attachments for each email, if they exist
+            foreach (var email in emails)
+            {
+                var emailWithAttachments = new EmailWithAttachments()
+                {
+                    Email = email,
+                    Attachments = new List<OutgoingEmailAttachment>()
+                };
+
+                if (email.AttachmentId != null && email.AttachmentId > 0)
+                {
+                    var attachment = await _emailService.GetAttachment((int)email.AttachmentId);
+                    if (attachment != null)
+                    {
+                        emailWithAttachments.Attachments.Add(attachment);
+                    }
+                }
+
+                emailsWithAttachments.Add(emailWithAttachments);
+            }
+
+            return emailsWithAttachments;
+        }
+
+
+        /// <summary>
+        /// Method to send a single email for validation purposes specified by a MimeMessage object (as opposed to an OutgoingEmail database entry).
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
         public async Task<bool> SendEmail(MimeMessage message)
         {
             _logger.Info($"Sending manual email.");
+
+            _emailService.CheckEmailRecipients(message);
+            if (message.To.Count == 0)
+            {
+                _logger.Warn($"No valid recipients for manual email.");
+                return false;
+            }
 
             //connect to SES
             using var client = new SmtpClient();
@@ -120,73 +209,14 @@ namespace CAHFS_Emailer.Services
             return false;
         }
 
+        /// <summary>
+        /// Return true if it looks like the email was sent successfully
+        /// </summary>
+        /// <param name="result"></param>
+        /// <returns></returns>
         private static bool IsSuccessResult(string result)
         {
             return result.StartsWith("Ok");
-        }
-
-        private static MimeMessage CreateMessage(OutgoingEmail email)
-        {
-            //create message with from, to, subject
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress("", email.FromAddress));
-            message.To.Add(new MailboxAddress("", email.ToAddresses));
-            message.Subject = email.SubjectLine;
-
-            var bodyBuilder = new BodyBuilder();
-
-            //create body with html and/or text
-            if (!string.IsNullOrEmpty(email.BodyHtml))
-            {
-                bodyBuilder.HtmlBody = email.BodyHtml;
-            }
-            if (!string.IsNullOrWhiteSpace(email.BodyText))
-            {
-                bodyBuilder.TextBody = email.BodyText;
-            }
-
-            //builder.Attachments.Add(fileName, attachmentData, ContentType.Parse("application/pdf"));
-
-            //add attachments
-            if (email.AttachmentCount > 0 && email.AttachmentData != null)
-            {
-                using (var stream = new MemoryStream(email.AttachmentData))
-                {
-                    bodyBuilder.Attachments.Add("FileName", stream);
-                }
-            }
-
-            message.Body = bodyBuilder.ToMessageBody();
-
-            return message;
-        }
-
-        public MimeMessage CreateMessage(string from, string to, string subject, string body, IFormFile? attachment)
-        {
-            //create message with from, to, subject
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress("", from));
-            message.To.Add(new MailboxAddress("", to));
-            message.Bcc.Add(new MailboxAddress("", "bsedwards@ucdavis.edu"));
-            message.Subject = subject;
-
-            var bodyBuilder = new BodyBuilder();
-            bodyBuilder.HtmlBody = body;
-
-            //builder.Attachments.Add(fileName, attachmentData, ContentType.Parse("application/pdf"));
-
-            //add attachment
-            if (attachment != null)
-            {
-                using (var stream = attachment.OpenReadStream())
-                {
-                    bodyBuilder.Attachments.Add("Attachment.pdf", stream);
-                }
-            }
-
-            message.Body = bodyBuilder.ToMessageBody();
-
-            return message;
         }
     }
 }

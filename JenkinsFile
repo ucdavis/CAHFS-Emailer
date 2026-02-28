@@ -59,6 +59,18 @@ pipeline {
 		}
     }
 	post {
+		success {
+				script {
+					def targetUrl = ""
+					if (params.Branch == 'main') {
+						targetUrl = "http://cahfs-caei.cahfs.ucdavis.edu/emailer"
+					} else {
+						targetUrl = "http://cahfs-caei.cahfs.ucdavis.edu/emailer-test"
+					}
+					//def response = httpRequest httpMode: 'GET', url: 'http://cahfs-caei.cahfs.ucdavis.edu/emailer-test', validResponseCodes: '200'
+					bat "curl -G \"${targetUrl}\""
+				}
+			}
 			always {
 				//Archive the artifacts - in this case, all files - so that the restore job can re-deploy them.
 				archiveArtifacts artifacts: 'CAHFS Emailer/bin/Release/net10.0/publish/**/*', fingerprint: true, onlyIfSuccessful: true

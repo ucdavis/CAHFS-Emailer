@@ -54,7 +54,8 @@ try
         logger.Fatal("Failed to get secrets from AWS. Error: " + ex.InnerException);
     }
 
-    builder.Services.AddTransient<IEmailSender, EmailSender>();
+    builder.Services.AddScoped<IEmailSender, EmailSender>();
+    builder.Services.AddScoped<EmailService>();
 
     // Add services to the container.
     builder.Services.AddRazorPages(options =>
@@ -239,13 +240,13 @@ try
         );
 
     app.UseHangfireDashboard(); // Enables the Hangfire dashboard
-
-    app.Run();
-
+    
     RecurringJob.AddOrUpdate<EmailSender>("check-for-emails", // Unique Job ID
         x => x.EmailSendJob(), // The method to execute
         Cron.MinuteInterval(1)
     );
+
+    app.Run();    
 }
 
 catch (Exception exception)

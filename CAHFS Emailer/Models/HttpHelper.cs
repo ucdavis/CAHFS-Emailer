@@ -60,12 +60,14 @@ namespace CAHFS_Emailer.Models
         /// <returns></returns>
         public static T? GetSetting<T>(string section, string setting)
         {
-            var sect = Settings.GetSection(section);
-            var settingValue = sect.GetValue<T>(setting);
-
             return Settings == null
                 ? default
                 : Settings.GetSection(section).GetValue<T>(setting);
+        }
+
+        public static T? GetSection<T>(string section)
+        {
+            return Settings!.GetSection(section).Get<T>();
         }
 
         /// <summary>
@@ -84,11 +86,11 @@ namespace CAHFS_Emailer.Models
 
                 if(Environment != null && Environment.IsEnvironment("Test"))
                 {
-                    rootURL += "/caei-test";
+                    rootURL += "/emailer-test";
                 }
                 else if (Environment != null && Environment.IsEnvironment("Production"))
                 {
-                    rootURL += "/caei";
+                    rootURL += "/emailer";
                 }
             }
 
