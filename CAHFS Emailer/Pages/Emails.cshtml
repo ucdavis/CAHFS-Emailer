@@ -1,8 +1,10 @@
 ﻿@page
+@using Microsoft.AspNetCore.Components.Web
 @using CAHFS_Emailer.Models
 @model CAHFS_Emailer.Pages.EmailsModel
 @{
     var emails = ViewData["Emails"] as List<EmailWithAttachments>;
+    var pageLinkBase = $"?StartDate={Model.StartDate.ToString("yyyy-MM-dd")}&EndDate={Model.EndDate.ToString("yyyy-MM-dd")}&Status={Model.Status}&";
 }
 
 <form method="get">
@@ -14,7 +16,7 @@
         </div>
 
         <div class="mb-3 col">
-            <label asp-for="EndDate" class="form-label">Start Date:</label>
+            <label asp-for="EndDate" class="form-label">End Date:</label>
             <input asp-for="EndDate" class="form-control" type="date" required />
         </div>
 
@@ -34,17 +36,37 @@
     </div>
 </form>
 
+<ul class="pagination">
+    <li class="page-item @(Model.PageNumber == 1 ? "disabled" : "")">
+        <a class="page-link button" href="@(pageLinkBase)PageNumber=1">First</a>
+    </li>
+    <li class="page-item @(Model.PageNumber == 1 ? "disabled" : "")">
+        <a class="page-link button" href="@(pageLinkBase)PageNumber=@(Model.PageNumber - 1)">Previous</a>
+    </li>
+
+    @for (int i = 1; i <= @Model.PageCount && i <= 5; i++)
+    {
+        int pageNumber = i;
+        <li class="page-item @(Model.PageNumber == i ? "active" : "")">
+            <a class="page-link button" href="@(pageLinkBase)PageNumber=@pageNumber">@i</a>
+        </li>
+    }
+
+    <li class="page-item @(Model.PageNumber == Model.PageCount ? "disabled" : "")">
+        <a class="page-link button" href="@(pageLinkBase)PageNumber=@(Model.PageNumber + 1)">Next</a>
+    </li>
+    <li class="page-item @(Model.PageNumber == Model.PageCount ? "disabled" : "")">
+        <a class="page-link button" href="@(pageLinkBase)PageNumber=@Model.PageCount">Last</a>
+    </li>
+</ul>
+
 <table cellpadding="3">
     <thead>
-        <tr>
+        <tr valign="top">
             <th>FOLDERNO</th>
             <th>Added</th>
-            <th>From</th>
-            <th>To</th>
-            <th>CC</th>
-            <th>BCC</th>
-            <th>Subject</th>
-            <th>Body</th>
+            <th>From / To /CC / BCC</th>
+            <th width="30%">Subject</th>
             <th>Status</th>
             <th>Sent At</th>
             <th>Attachments</th>
@@ -53,15 +75,29 @@
     <tbody>
         @foreach (var e in emails ?? [])
         {
-            <tr>
+            <tr valign="top">
                 <td>@e.Email.FolderNo</td>
                 <td>@e.Email.InsertedAt</td>
-                <td>@e.Email.FromAddress</td>
-                <td>@e.Email.ToAddresses</td>
-                <td>@e.Email.CcAddresses</td>
-                <td>@e.Email.BccAddresses</td>
-                <td>@e.Email.SubjectLine</td>
-                <td>@e.Email.BodyText</td>
+                <td>
+                    @e.Email.FromAddress
+                    <br/>
+                    @e.Email.ToAddresses
+                    <br/>
+                    
+                    @if (!String.IsNullOrEmpty(e.Email.CcAddresses))
+                    {
+                        @e.Email.CcAddresses
+                        <br/>
+                    }
+                    @if (!String.IsNullOrEmpty(e.Email.BccAddresses)) 
+                    {
+                        @e.Email.BccAddresses
+                        <br/>
+                    }
+                </td>
+                <td>
+                    @e.Email.SubjectLine
+                </td>
                 <td>
                     @e.Email.Status
                     <br/>

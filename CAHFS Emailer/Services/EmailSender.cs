@@ -104,6 +104,7 @@ namespace CAHFS_Emailer.Services
                         _logger.Warn($"No valid recipients for email for case {e.FolderNo}.");
                         e.Status = "Error";
                         e.ErrorMessage = "No valid recipients in non-production environment.";
+                        e.SentAt = DateTime.Now;
                         _context.OutgoingEmails.Update(e);
                         await _context.SaveChangesAsync();
                         continue;

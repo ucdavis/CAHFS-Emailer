@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CAHFS_Emailer.Data;
 using CAHFS_Emailer.Models;
 using CAHFS_Emailer.Services;
@@ -10,6 +11,7 @@ namespace CAHFS_Emailer.Pages
     {
         private readonly StarLIMSContext _context = context;
         private readonly EmailService _emailService = emailService;
+        private readonly int pageSize = 25;
 
         [BindProperty(SupportsGet = true)]
         public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(-7));
@@ -17,14 +19,32 @@ namespace CAHFS_Emailer.Pages
         public DateOnly EndDate { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(1));
         [BindProperty(SupportsGet = true)]
         public string? Status { get; set; }
+        [BindProperty(SupportsGet=true)]
+        public int PageNumber { get; set; } = 1;
+
+        public int PageCount = 0;
 
         public async Task OnGetAsync()
         {
+            if (PageNumber < 1)
+            {
+                PageNumber = 1;
+            }
+            int skipAmount = (PageNumber - 1) * pageSize;
+
             var emails = _context.OutgoingEmails
                 .Where(e => DateOnly.FromDateTime(e.InsertedAt) >= StartDate && DateOnly.FromDateTime(e.InsertedAt) <= EndDate)
                 .Where(e => string.IsNullOrEmpty(Status) || e.Status == Status)
                 .OrderByDescending(e => e.InsertedAt)
+                .Skip(skipAmount)
+                .Take(pageSize)
                 .ToList();
+
+            var totalRecords = _context.OutgoingEmails
+                .Where(e => DateOnly.FromDateTime(e.InsertedAt) >= StartDate && DateOnly.FromDateTime(e.InsertedAt) <= EndDate)
+                .Where(e => string.IsNullOrEmpty(Status) || e.Status == Status)
+                .Count();
+            PageCount = (int)Math.Ceiling((double)totalRecords / pageSize);
 
             List<EmailWithAttachments> emailsWithAttachments = [];
             foreach (var email in emails)

@@ -1,4 +1,5 @@
 using CAHFS_Emailer.Data;
+using CAHFS_Emailer.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -6,20 +7,24 @@ using Microsoft.EntityFrameworkCore;
 namespace CAHFS_Emailer.Pages
 {
 
-    public class ViewAttachmentModel(StarLIMSContext context) : PageModel
+    public class ViewAttachmentModel(StarLIMSContext context, EmailService emailService) : PageModel
     {
         private readonly StarLIMSContext _context = context;
-        public async Task<IActionResult> OnGetAsync(string id)
+        private readonly EmailService _emailService = emailService;
+        public async Task<IActionResult> OnGetAsync(int? id)
         {
-            var file = await _context.DBFileStorages
-                .FirstOrDefaultAsync(f => f.FileImageId == id);
-
-            if (file == null || file.FileImage == null)
+            if(id == null)
+            {
+                return NotFound();
+            }
+            var attachment = await _emailService.GetAttachment((int)id);
+            
+            if (attachment == null || attachment?.FileStorage?.FileImage == null)
             {
                 return NotFound();
             }
 
-            return File(file.FileImage, GetMimeType(file.FileExtension), file.FileName);
+            return File(attachment.FileStorage.FileImage, GetMimeType(attachment.FileStorage.FileExtension?.ToUpper()), attachment.AttachmentFilename);
         }
 
         private string GetMimeType(string? extension)
