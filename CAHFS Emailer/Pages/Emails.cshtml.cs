@@ -14,7 +14,7 @@ namespace CAHFS_Emailer.Pages
         private readonly int pageSize = 25;
 
         [BindProperty(SupportsGet = true)]
-        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(-7));
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Now.);
         [BindProperty(SupportsGet = true)]
         public DateOnly EndDate { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(1));
         [BindProperty(SupportsGet = true)]
