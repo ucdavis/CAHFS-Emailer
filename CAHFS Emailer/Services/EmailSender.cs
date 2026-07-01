@@ -17,6 +17,7 @@ namespace CAHFS_Emailer.Services
 
     public class EmailSender(StarLIMSContext context, IOptions<SMTPSettings> smtpSettings, EmailService emailService) : IEmailSender
     {
+        private const int MaxBatchSize = 50;
         private const EmailerStatus available = EmailerStatus.Available;
 
         //semaphore to ensure multiple jobs don't run at the same time
@@ -30,26 +31,34 @@ namespace CAHFS_Emailer.Services
         private readonly EmailService _emailService = emailService;
 
         /// <summary>
-        /// Entry point for the job to send emails
+        /// Entry point for the job to send emails. Hangfire will pass a CancellationToken that fires on app shutdown.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token provided by Hangfire for graceful shutdown.</param>
         /// <returns></returns>
-        public async Task EmailSendJob()
+        public async Task EmailSendJob(CancellationToken cancellationToken)
         {
             _logger.Info($"EmailSendJob started at: {DateTime.UtcNow:HH:mm:ss}");
 
             if (_semaphore.Wait(0))
             {
-                _emailerStatus = EmailerStatus.Checking;
                 try
                 {
-                    await SendEmailsAsync();
+                    _emailerStatus = EmailerStatus.Checking;
+                    await SendEmailsAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.Warn("EmailSendJob was cancelled.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, $"Error in EmailSendJob. {ex.ToString()}");
+                    _logger.Error(ex, $"Error in EmailSendJob. {ex}");
                 }
-                _emailerStatus = EmailerStatus.Available;
-                _semaphore.Release();
+                finally
+                {
+                    _emailerStatus = EmailerStatus.Available;
+                    _semaphore.Release();
+                }
             }
             else
             {
@@ -62,11 +71,21 @@ namespace CAHFS_Emailer.Services
         /// <summary>
         /// Function to send all emails in the queue. Should be locked by a semaphore to prevent duplicate emails being sent.
         /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation gracefully.</param>
         /// <returns></returns>
-        private async Task SendEmailsAsync()
+        private async Task SendEmailsAsync(CancellationToken cancellationToken)
         {
-            //get emails from the database
-            var emails = _context.OutgoingEmails.Where(e => e.Status == "Pending").ToList();
+            //get emails from the database, limited to a batch size so the job doesn't lock for too long
+            var emails = _context.OutgoingEmails
+                .Where(e => e.Status == "Pending")
+                .Take(MaxBatchSize)
+                .ToList();
+
+            if (emails.Count == 0)
+            {
+                _logger.Info("No pending emails to send.");
+                return;
+            }
 
             _logger.Info($"Sending {emails.Count} emails.");
 
@@ -76,8 +95,12 @@ namespace CAHFS_Emailer.Services
             using var client = new SmtpClient();
             try
             {
-                await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls);
-                await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password);
+                await client.ConnectAsync(_smtpSettings.Server, _smtpSettings.Port, SecureSocketOptions.StartTls, cancellationToken);
+                await client.AuthenticateAsync(_smtpSettings.Username, _smtpSettings.Password, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -90,6 +113,8 @@ namespace CAHFS_Emailer.Services
 
             foreach (var email in emailsWithAttachments)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var e = email.Email;
                 _logger.Info($"Sending email for case {e.FolderNo} to: {e.ToAddresses}. Emails contains {e.AttachmentCount} attachments.");
 
@@ -105,11 +130,11 @@ namespace CAHFS_Emailer.Services
                         e.Status = "Error";
                         e.ErrorMessage = "No valid recipients in non-production environment.";
                         _context.OutgoingEmails.Update(e);
-                        await _context.SaveChangesAsync();
+                        await _context.SaveChangesAsync(cancellationToken);
                         continue;
                     }
 
-                    var result = await client.SendAsync(message);
+                    var result = await client.SendAsync(message, cancellationToken);
                     if (IsSuccessResult(result))
                     {
                         _logger.Info($"Email sent successfully for case {e.FolderNo}. Result: {result}");
@@ -123,11 +148,26 @@ namespace CAHFS_Emailer.Services
                         e.ErrorMessage = $"Failed to send email. Result: {result}";
                     }
                     _context.OutgoingEmails.Update(e);
-                    await _context.SaveChangesAsync();
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, $"Error sending email message for case {e.FolderNo}. {ex.Message}");
+                    var msg = $"Error sending email message for case {e.FolderNo}. {ex.Message}";
+                    _logger.Error(ex, msg);
+                    try {
+                        e.Status = "Error";
+                        e.ErrorMessage = msg;
+                        _context.OutgoingEmails.Update(e);
+                        await _context.SaveChangesAsync(cancellationToken);
+                    }
+                    catch (Exception innerEx)
+                    {
+                        _logger.Error(innerEx, $"Error updating email status for case {e.FolderNo}. {innerEx.Message}");
+                    }
                     continue;
                 }
             }
@@ -135,7 +175,7 @@ namespace CAHFS_Emailer.Services
             _emailerStatus = EmailerStatus.Finishing;
 
             // Disconnect from the server
-            await client.DisconnectAsync(true);
+            await client.DisconnectAsync(true, cancellationToken);
         }
 
         private async Task<List<EmailWithAttachments>> GetEmailsWithAttachments(List<OutgoingEmail> emails)

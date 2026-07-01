@@ -242,7 +242,7 @@ try
     app.UseHangfireDashboard(); // Enables the Hangfire dashboard
     
     RecurringJob.AddOrUpdate<EmailSender>("check-for-emails", // Unique Job ID
-        x => x.EmailSendJob(), // The method to execute
+        x => x.EmailSendJob(CancellationToken.None), // The method to execute; Hangfire replaces CancellationToken.None at runtime
         Cron.MinuteInterval(1)
     );
 
